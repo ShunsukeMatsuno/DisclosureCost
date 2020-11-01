@@ -1,0 +1,199 @@
+---
+title: "Replication of Cheynel and Liu-Watts (2020)"
+author: "Shunsuke Matsuno"
+date: "2020/7/28"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+
+```{r settings, echo=FALSE}
+### Setting the global code chunk options ###
+# Args
+#   comment='': won't append any string to the start of each line of results
+#   fig.align='center': align figures to the center of document
+knitr::opts_chunk$set(comment="", fig.align="center", warning = FALSE)
+```
+
+# Description
+- "A Simple Structural estimator of Disclosure Costs" by Cheynel and Liu-Watts, 2020, RAST.
+- In this note we replicate Section 2.5 of the original paper.
+- In addition, we check the behavior of the proposed estimator with several underlying distributions of firm values.
+- All the original functions can be found [here](https://github.com/ShunsukeMatsuno/DisclosureCost).
+
+# Required libraries
+```{r, message=FALSE}
+easypackages::libraries('tidyverse', 'ggplot2', 'patchwork', 'CheynelLiuWatts')
+```
+
+
+# Simulation
+- There are $N=10,000$ firms and each firm has $T=40$ periods.
+- Private signal $x$ is drawn from standard normal distribution.
+    - Note that $x$ is actually the manager's posterior expectation about future earnings. However, we can effectively regard that manager observes random $x$ and investors form belief about $x$.
+- The cost of disclosure $c$ is randomly assigned to firms, where $c \in \{ 0.4, 0.5, \dots, 2.1 \}$. 
+    
+```{r}
+# seed
+set.seed(2020)
+
+# simulation settings
+num_firms <- 10000    # 10,000 firms for each cost
+time <- 40            # 40 periods for each firm
+c <- seq(0.4, 2.1, by = .1)  # grid of cost
+N <- num_firms * length(c)    
+```
+
+## Simulating true cost and disclosure
+- Each firm has 40 periods.
+- `x` is the private inforamtion about firm value, which is iid across firms and over time.
+```{r}
+# firm
+df_firm <- tibble(
+  firm = rep(1:N, each = time),
+  time = rep(1:time, times = N),
+  x = rnorm(N*time)
+)
+df_firm
+```
+- The cost of disclosure $c$ is assumed to vary across firms but constant over period in each firm.
+```{r}
+df_firm <- df_firm %>% 
+  group_by(firm) %>% 
+  mutate(c = sample(c, 1)) %>% 
+  ungroup()
+df_firm
+```
+
+- The threshold is determined by
+$$
+\tau - c = \mathbb{E}[x \mid x \le \tau].
+$$
+- To solve this equation, we write a function that computes $\mathbb{E}[x \mid x \le \tau] - (\tau - c )$, and minimize it.
+- `compute_threshold.R` do this computation.
+    - The following code takes a couple of minutes.
+```{r}
+df_firm <- df_firm %>% 
+  group_by(firm) %>% 
+  mutate(tau = compute_threshold(x, c)) %>% 
+  ungroup()
+df_firm  
+```
+
+- If $x>=\tau$, then firm's disclose their $x$, and if not, they do not disclose.
+```{r tau}
+df_firm <- df_firm %>% 
+  mutate(disclosure = if_else(x >= tau, x, NA_real_))
+df_firm
+```
+
+- Finally, for the purpose of estimation, each firm must have at least one period of disclosure and one period of non-disclosure.
+    - Firms that do not satisfy this criterion ( (not) disclosing in all periods) are dropped from sample.
+```{r}
+df_firm <- df_firm %>% 
+  group_by(firm) %>% 
+  mutate(remain_firm = 
+           if_else(
+             sum(!is.na(disclosure)) == 0 | sum(is.na(disclosure)) == 0,
+             FALSE,
+             TRUE)) %>% 
+  ungroup() %>% 
+  filter(remain_firm) %>% 
+  select(-remain_firm)     # this variable is no longer needed
+``` 
+    
+## Estimation
+- Using the simulated data, we estimate the cost of disclosure by the following procedure:
+1. Estimate $p$, $\tau$, $m := \mathbb{E}[x\mid x>\tau]$.
+    - $\hat{p} = \text{sample disclosure frequency}$
+    - $\hat{\tau} = \min\{\text{observed } x\}$
+    - $\hat{m} = \text{average forecast surprise}$ 
+2. Estiate $c$ by
+$$
+\begin{align*}
+\hat{c}_{\textit{NP}} & =\max\left(0,\hat{\tau}+\frac{\hat{p}}{1-\hat{p}}\hat{m}\right),\\
+\hat{c}_{\textit{BBT}} & =\Phi^{-1}(1-\hat{p})+\frac{\phi\left(\Phi^{-1}(1-\hat{p})\right)}{1-\hat{p}}.
+\end{align*}
+$$
+
+- `estimate_c_NP.R` and `estimate_c_BBT.R` do this procedure.
+```{r}
+df_cost <- df_firm %>% 
+  mutate(c_NP  = estimate_c_NP(.),
+         c_BBT = estimate_c_BBT(.))
+df_cost
+```
+
+- Since we know the true cost, we can compute bias and absolute error.
+```{r}
+df_cost <- df_cost %>% 
+  mutate(bias_NP   = c_NP - c,
+         bias_BBT  = c_BBT - c,
+         error_NP  = abs(c_NP - c),
+         error_BBT = abs(c_BBT - c))
+```
+
+- Plot bias and error (Fig.1 of original paper).
+```{r}
+# bias
+df_cost_plot_bias <- df_cost %>% 
+  group_by(c) %>% 
+  summarise(across(bias_NP:bias_BBT, mean),
+            .groups = "drop") %>% 
+  pivot_longer(-c, names_to = 'type', values_to = 'bias')
+  
+g1 <- ggplot(df_cost_plot_bias, aes(x = c, y = bias, color = type)) +
+  geom_line(aes(linetype = type), size = 1) + 
+  theme_bw() +
+  theme(legend.position = 'top') 
+
+# error
+df_cost_plot_error <- df_cost %>% 
+  group_by(c) %>% 
+  summarise(across(error_NP:error_BBT, mean),
+            .groups = "drop") %>% 
+  pivot_longer(-c, names_to = 'type', values_to = 'error')
+  
+g2 <- ggplot(df_cost_plot_error, aes(x = c, y = error, color = type)) +
+  geom_line(aes(linetype = type), size = 1) +
+  theme_bw() +
+  theme(legend.position = 'top') 
+
+p <- g1 + g2 + plot_layout(ncol = 1) 
+plot(p)
+ggsave("cost_simulated.png", p, path = "../output/figure", width = 8, height = 5)
+```
+## Robustness to distrbtutional assumption
+- What happens if $x$ is not distributed normally? 
+    - BBT estimator assumes that $x$ follows normal distribution.
+    - NP estimator does not impose any distributional assumption on $x$.
+- `bias_error_plot_distribution.R` plots bias and error with several distributional assumptions.
+    - `dist = 1`: standard normal
+    - `dist = 2`: uniform dist. over $[0,1]$
+    - `dist = 3`: exponential dist. with rate $1$ 
+    - `dist = 4`: t-dist. with df $5$
+- As shown in the following figures, NP estimator outperforms BBT estimator only in the case of uniform distribution. 
+    - The assumption of uniform distribution is often put in theoretical literature, so this characteristics is important.
+    - However, the robustness of BBT estimator is surprising.
+    - For example, the exponential distribution with rate $1$ is quite skewed compared to standard normal, while BBT estimator which assumes normality offers good estimates.
+    
+```{r,message=FALSE}
+library(doParallel)
+cl <- makePSOCKcluster(parallel::detectCores(logical = FALSE))
+doParallel::registerDoParallel(cl)
+
+obj <- numeric(4)
+
+obj <- foreach (i = 1:4,
+        .packages = c('dplyr', 'ggplot2', 'patchwork', 'tidyr', 'CheynelLiuWatts')) %dopar% {
+  obj[i] <- bias_error_plot_distribution(dist = i, 
+                                         num_firms = num_firms, 
+                                         time = time)
+}
+
+stopCluster(cl)
+
+obj
+```
+
