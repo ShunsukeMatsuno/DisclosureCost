@@ -39,10 +39,10 @@ easypackages::libraries('tidyverse', 'ggplot2', 'patchwork', 'CheynelLiuWatts')
 set.seed(2020)
 
 # simulation settings
-num_firms <- 10000    # 10,000 firms for each cost
-time <- 40            # 40 periods for each firm
-c <- seq(0.4, 2.1, by = .1)  # grid of cost
-N <- num_firms * length(c)    
+num_firms <- 10000                   # 10,000 firms for each cost
+time      <- 40                      # 40 periods for each firm
+c         <- seq(0.4, 2.1, by = .1)  # grid of cost
+N         <- num_firms * length(c)    
 ```
 
 ## Simulating true cost and disclosure
@@ -53,7 +53,7 @@ N <- num_firms * length(c)
 df_firm <- tibble(
   firm = rep(1:N, each = time),
   time = rep(1:time, times = N),
-  x = rnorm(N*time)
+  x    = rnorm(N*time)
 )
 df_firm
 ```
@@ -73,6 +73,10 @@ $$
 - To solve this equation, we write a function that computes $\mathbb{E}[x \mid x \le \tau] - (\tau - c )$, and minimize it.
 - `compute_threshold.R` do this computation.
     - The following code takes a couple of minutes.
+```{r}
+compute_threshold
+```
+
 ```{r}
 df_firm <- df_firm %>% 
   group_by(firm) %>% 
@@ -118,6 +122,11 @@ $$
 $$
 
 - `estimate_c_NP.R` and `estimate_c_BBT.R` do this procedure.
+```{r}
+estimate_c_NP
+estimate_c_BBT
+```
+
 ```{r}
 df_cost <- df_firm %>% 
   mutate(c_NP  = estimate_c_NP(.),
