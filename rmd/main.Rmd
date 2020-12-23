@@ -204,7 +204,7 @@ obj <- foreach (i = 1:4,
         .packages = c('dplyr', 'ggplot2', 'patchwork', 'tidyr', 'CheynelLiuWatts')) %dopar% {
   obj[i] <- bias_error_plot_distribution(dist = i, 
                                          num_firms = num_firms, 
-                                         time = periods)
+                                         periods = periods)
 }
 
 stopCluster(cl)
@@ -216,6 +216,7 @@ obj
     - Since $T$ is quarterly scale, $T=200$ means $50$ years.
     - It is unusual to have data of $50$ years.
 ```{r,message=FALSE}
+cl <- makePSOCKcluster(parallel::detectCores(logical = FALSE))
 doParallel::registerDoParallel(cl)
 
 obj <- numeric(4)
@@ -224,7 +225,7 @@ obj <- foreach (i = 1:4,
         .packages = c('dplyr', 'ggplot2', 'patchwork', 'tidyr', 'CheynelLiuWatts')) %dopar% {
   obj[i] <- bias_error_plot_distribution(dist = i, 
                                          num_firms = num_firms, 
-                                         time = 200)
+                                         periods = 200)
 }
 
 stopCluster(cl)
