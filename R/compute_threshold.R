@@ -10,14 +10,14 @@ compute_threshold <- function(x, c){
     }else{
       m <- mean(x[x <= tau])
     }
-    abs(m - (tau - c))
-  }
+    return(abs(m - (tau - c)))
+  }   
   
   opt_res <- optim(par = .3, 
                    fn = obj, 
                    method = 'Brent',
-                   lower = -3,
-                   upper = 3)
+                   lower = min(x) - 1,
+                   upper = max(x) + 1)
   
   return(opt_res$par)
   
