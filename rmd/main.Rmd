@@ -39,7 +39,7 @@ easypackages::libraries('tidyverse', 'ggplot2', 'patchwork', 'CheynelLiuWatts')
 set.seed(2020)
 
 # simulation settings
-num_firms <- 10000                   # 10,000 firms for each cost
+num_firms <- 10000                  # 10,000 firms for each cost
 periods   <- 40                      # 40 periods for each firm
 c_vec     <- seq(0.4, 2.1, by = .1)  # grid of cost
 ```
@@ -81,12 +81,14 @@ df_firm <- left_join(df_firm, df_tau, by = "firm")
 ```
 
 
-######
-
 - If $x>=\tau$, then firm's disclose their $x$, and if not, they do not disclose.
+    - Additionally, we compute `p_hat` here.
 ```{r tau}
 df_firm <- df_firm %>% 
-  mutate(disclosure = if_else(x >= tau, x, NA_real_))
+  mutate(disclosure = if_else(x >= tau, x, NA_real_)) %>% 
+  group_by(firm) %>% 
+  mutate(p_hat = mean(!is.na(disclosure))) %>% 
+  ungroup()
 df_firm
 ```
 
@@ -104,7 +106,10 @@ df_firm <- df_firm %>%
   filter(remain_firm) %>% 
   select(-remain_firm)     # this variable is no longer needed
 ``` 
-    
+   
+   
+- `simulate_data.R` does all the procedure above.
+
 ## Estimation
 - Using the simulated data, we estimate the cost of disclosure by the following procedure:
 1. Estimate $p$, $\tau$, $m := \mathbb{E}[x\mid x>\tau]$.
@@ -138,20 +143,20 @@ df_cost <- df_firm %>%
 
 - Since we know the true cost, we can compute bias and absolute error.
 ```{r}
-df_cost <- df_cost %>% 
+df_cost_summary <- df_cost %>% 
   group_by(c) %>% 
   summarise(bias_NP   = mean(c_NP - c, na.rm = TRUE),
             bias_BBT  = mean(c_BBT - c, na.rm = TRUE),
             error_NP  = mean(abs(c_NP - c), na.rm = TRUE),
             error_BBT = mean(abs(c_BBT - c), na.rm = TRUE),
             .groups   = "drop")
-df_cost
+df_cost_summary
 ```
 
 - Plot bias and error (Fig.1 of original paper).
 ```{r}
 # bias
-df_cost_plot_bias <- df_cost %>% 
+df_cost_plot_bias <- df_cost_summary %>% 
   group_by(c) %>% 
   summarise(across(bias_NP:bias_BBT, mean),
             .groups = "drop") %>% 
@@ -163,7 +168,7 @@ g1 <- ggplot(df_cost_plot_bias, aes(x = c, y = bias, color = type)) +
   theme(legend.position = 'top') 
 
 # error
-df_cost_plot_error <- df_cost %>% 
+df_cost_plot_error <- df_cost_summary %>% 
   group_by(c) %>% 
   summarise(across(error_NP:error_BBT, mean),
             .groups = "drop") %>% 
